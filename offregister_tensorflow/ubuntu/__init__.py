@@ -81,8 +81,8 @@ def install0(virtual_env=None, *args, **kwargs):
         Environments='Environment=VIRTUAL_ENV={virtual_env}\n'
                      'Environment=PYTHONPATH={virtual_env}'.format(virtual_env=virtual_env),
         User=user, Group=group,
-        extra_opts="--NotebookApp.password='{password}' --NotebookApp.password_required=True "
-                   "--no-browser --NotebookApp.open_browser=False".format(
-            password=environ['PASSWORD']
-        )
+        extra_opts=' '.join(("--NotebookApp.password='{password}'".format(password=environ['PASSWORD']),
+                             '--NotebookApp.password_required=True',
+                             '--NotebookApp.iopub_data_rate_limit=2147483647',  # send output for longer
+                             '--no-browser', '--NotebookApp.open_browser=False'))
     )
