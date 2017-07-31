@@ -1,8 +1,12 @@
+from os import environ
+
 from fabric.api import run, sudo
-from fabric.context_managers import cd, shell_env
+from fabric.context_managers import cd, shell_env, settings
 from fabric.contrib.files import exists
+from offregister_bazel.ubuntu import install_bazel
 from offregister_fab_utils.apt import apt_depends
 from offregister_fab_utils.fs import cmd_avail
+from offregister_fab_utils.git import clone_or_update
 from offregister_jupyter.systemd import install_jupyter_notebook_server
 
 
@@ -23,7 +27,40 @@ def install0(virtual_env=None, *args, **kwargs):
         run('virtualenv --system-site-packages "{virtual_env}"'.format(virtual_env=virtual_env), shell_escape=False)
 
     with shell_env(VIRTUAL_ENV=virtual_env, PATH="{}/bin:$PATH".format(virtual_env)):
-        run('pip install -U tensorflow jupyter')
+        run('pip install -U jupyter')
+        if kwargs.get('from') == 'source':
+            run('pip uninstall -y tensorflow', warn_only=True, quiet=True)
+            apt_depends('python-numpy', 'python-wheel')
+            run('mkdir -p repos')
+            with cd('repos'):
+                clone_or_update(repo='tensorflow', team='tensorflow', branch=kwargs.get('branch', 'r1.3'),
+                                skip_reset=True)
+                with cd('tensorflow'):
+                    release_to = '{home}/repos/tensorflow_pkg'.format(home=home)
+                    if kwargs.get('force_rebuild'):
+                        run('rm -rf {}'.format(release_to))
+                    if not exists(release_to):
+                        install_bazel()
+                        with shell_env(PYTHON_BIN_PATH='{}/bin/python'.format(virtual_env),
+                                       PYTHON_LIB_PATH=virtual_env,
+                                       TF_DOWNLOAD_MKL='1',
+                                       TF_NEED_MKL='1',
+                                       CC_OPT_FLAGS='-march=native',
+                                       TF_NEED_JEMALLOC='1',
+                                       TF_NEED_GCP='0',
+                                       TF_NEED_HDFS='0',
+                                       TF_ENABLE_XLA='0',  # JIT
+                                       TF_NEED_VERBS='0',
+                                       TF_NEED_OPENCL='0',
+                                       TF_NEED_CUDA='0',
+                                       TF_NEED_MPI='0'):
+                            run('./configure')
+                        run('bazel build --config=opt //tensorflow/tools/pip_package:build_pip_package')
+                        run('bazel-bin/tensorflow/tools/pip_package/build_pip_package {}'.format(release_to))
+                    run('pip install {}/*.whl'.format(release_to))
+        elif kwargs.get('from') == 'pypi' or 'from' not in kwargs:
+            run('pip install -U tensorflow')
+
         hello_world = ''.join(l.strip() for l in '''import tensorflow as tf;
         hello = tf.constant('TensorFlow works!');
         sess = tf.Session();
@@ -46,6 +83,6 @@ def install0(virtual_env=None, *args, **kwargs):
         User=user, Group=group,
         extra_opts="--NotebookApp.password='{password}' --NotebookApp.password_required=True "
                    "--no-browser --NotebookApp.open_browser=False".format(
-            password='sha1:<hash>'
+            password=environ['PASSWORD']
         )
     )
