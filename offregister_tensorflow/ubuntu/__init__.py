@@ -8,9 +8,10 @@ from offregister_fab_utils.apt import apt_depends
 from offregister_fab_utils.fs import cmd_avail
 from offregister_fab_utils.git import clone_or_update
 from offregister_jupyter.systemd import install_jupyter_notebook_server
+from offregister_opencv.base import dl_install_opencv
 
 
-def install0(virtual_env=None, *args, **kwargs):
+def install_tensorflow0(virtual_env=None, *args, **kwargs):
     apt_depends('python2.7', 'python2.7-dev', 'python-dev', 'python-pip', 'python-apt',
                 'build-essential', 'sudo', 'git-core', 'libffi-dev', 'libssl-dev',
                 'python-software-properties', 'libatlas-dev', 'liblapack-dev')
@@ -68,6 +69,10 @@ def install0(virtual_env=None, *args, **kwargs):
         '''.splitlines())
         run('python -c "{}"'.format(hello_world))
 
+
+def install_jupyter_notebook1(virtual_env=None, *args, **kwargs):
+    home = run('echo $HOME', quiet=True)
+    virtual_env = virtual_env or '{home}/venvs/tflow'.format(home=home)
     user, group = (lambda ug: (ug[0], ug[1]) if len(ug) > 1 else (ug[0], ug[0]))(
         run('''printf '%s\t%s' "$USER" "$GROUP"''', quiet=True, shell_escape=False).split('\t'))
     notebook_dir = kwargs.get('notebook_dir', '{home}/notebooks'.format(home=home))
@@ -86,3 +91,15 @@ def install0(virtual_env=None, *args, **kwargs):
                              '--NotebookApp.iopub_data_rate_limit=2147483647',  # send output for longer
                              '--no-browser', '--NotebookApp.open_browser=False'))
     )
+
+
+def install_opencv2(virtual_env=None, *args, **kwargs):
+    home = run('echo $HOME', quiet=True)
+    virtual_env = virtual_env or '{home}/venvs/tflow'.format(home=home)
+    dl_install_opencv(extra_cmake_args="-D PYTHON2_PACKAGES_PATH='{virtual_env}/lib/python2.7/site-packages' "
+                                       "-D PYTHON2_LIBRARY='{virtual_env}/bin'".format(virtual_env=virtual_env))
+
+
+def install_tensorboard3(virtual_env=None, *args, **kwargs):
+    home = run('echo $HOME', quiet=True)
+    virtual_env = virtual_env or '{home}/venvs/tflow'.format(home=home)
