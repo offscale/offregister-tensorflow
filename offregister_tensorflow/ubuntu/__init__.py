@@ -34,8 +34,8 @@ def install_tensorflow0(virtual_env=None, *args, **kwargs):
             apt_depends('python-numpy', 'python-wheel')
             run('mkdir -p repos')
             with cd('repos'):
-                clone_or_update(repo='tensorflow', team='tensorflow', branch=kwargs.get('branch', 'r1.3'),
-                                skip_reset=True)
+                clone_or_update(repo='tensorflow', team='tensorflow', branch=kwargs.get('branch', 'r1.4'),
+                                skip_reset=True, skip_checkout=False)
                 with cd('tensorflow'):
                     release_to = '{home}/repos/tensorflow_pkg'.format(home=home)
                     if kwargs.get('force_rebuild'):
@@ -53,10 +53,15 @@ def install_tensorflow0(virtual_env=None, *args, **kwargs):
                                        TF_ENABLE_XLA='0',  # JIT
                                        TF_NEED_VERBS='0',
                                        TF_NEED_OPENCL='0',
+                                       TF_NEED_OPENCL_SYCL='0',
+                                       TF_NEED_COMPUTECPP='0',
                                        TF_NEED_CUDA='0',
-                                       TF_NEED_MPI='0'):
+                                       TF_NEED_MPI='0',
+                                       TF_NEED_S3='0',
+                                       TF_NEED_GDR='0',
+                                       TF_SET_ANDROID_WORKSPACE='0'):
                             run('./configure')
-                        run('bazel build --config=opt //tensorflow/tools/pip_package:build_pip_package')
+                        run('bazel build --config=opt //tensorflow/tools/pip_package:build_pip_package --incompatible_load_argument_is_label=false')
                         run('bazel-bin/tensorflow/tools/pip_package/build_pip_package {}'.format(release_to))
                     run('pip install {}/*.whl'.format(release_to))
         elif kwargs.get('from') == 'pypi' or 'from' not in kwargs:
