@@ -22,7 +22,7 @@ if __name__ == '__main__':
         name=package_name,
         author=__author__,
         version=__version__,
-        install_requires=['pyyaml', 'fabric'],
+        install_requires=['pyyaml', 'fabric==1.14.0'],
         test_suite=package_name + '.tests',
         packages=find_packages(),
         package_dir={package_name: package_name},

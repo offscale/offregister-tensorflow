@@ -7,6 +7,7 @@ from offregister_bazel.ubuntu import install_bazel
 from offregister_fab_utils.apt import apt_depends
 from offregister_fab_utils.fs import cmd_avail
 from offregister_fab_utils.git import clone_or_update
+from offregister_fab_utils.ubuntu.systemd import restart_systemd, install_upgrade_service
 from offregister_jupyter.systemd import install_jupyter_notebook_server
 from offregister_opencv.base import dl_install_opencv
 
@@ -27,29 +28,32 @@ def install_tensorflow0(python3=False, virtual_env=None, *args, **kwargs):
         apt_depends('python2.7', 'python2.7-dev', 'python-dev', 'python-pip', 'python-apt',
                     'python-numpy', 'python-wheel')
 
+    pip_version = kwargs.get('pip_version', '9.0.3')
     virtual_env_dir = virtual_env[:virtual_env.rfind('/')]
     if not exists(virtual_env_dir) or not exists(virtual_env):
         run('mkdir -p "{virtual_env_dir}"'.format(virtual_env_dir=virtual_env_dir), shell_escape=False)
         if python3:
-            run('pip3 install -U pip')
+            run('pip3 install pip=={pip_version}'.format(pip_version=pip_version))
             # `--system-site-packages` didn't install a pip
             run('python3 -m venv "{virtual_env}"'.format(virtual_env=virtual_env),
                 shell_escape=False)
         else:
-            run('pip install -U pip')
+            run('pip2 install -U pip')
+            run('pip2 install pip=={pip_version}'.format(pip_version=pip_version))
             run('virtualenv --system-site-packages "{virtual_env}"'.format(virtual_env=virtual_env), shell_escape=False)
 
     if not exists(virtual_env):
         raise ReferenceError('Virtualenv does not exist')
 
     with shell_env(VIRTUAL_ENV=virtual_env, PATH="{}/bin:$PATH".format(virtual_env)):
-        run('pip install -U jupyter pip')
+        run('pip install pip=={pip_version}'.format(pip_version=pip_version))
+        run('pip install -U jupyter')
         if kwargs.get('from') == 'source':
             run('pip uninstall -y tensorflow', warn_only=True, quiet=True)
             run('mkdir -p repos')
             with cd('repos'):
                 tf_repo = 'tensorflow-for-py3' if python3 else 'tensorflow'
-                clone_or_update(repo='tensorflow', team='tensorflow', branch=kwargs.get('branch', 'r1.4'),
+                clone_or_update(repo='tensorflow', team='tensorflow', branch=kwargs.get('tensorflow_branch', 'r1.8'),
                                 to_dir=tf_repo,
                                 skip_reset=True, skip_checkout=False)
                 with cd(tf_repo):
@@ -81,10 +85,12 @@ def install_tensorflow0(python3=False, virtual_env=None, *args, **kwargs):
                                        TF_NEED_MPI='0',
                                        TF_NEED_S3='0',
                                        TF_NEED_GDR='0',
-                                       TF_SET_ANDROID_WORKSPACE='0'):
+                                       TF_SET_ANDROID_WORKSPACE='0',
+                                       TF_NEED_KAFKA='0',
+                                       TF_CUDA_CLANG='0',
+                                       TF_DOWNLOAD_CLANG='0'):
                             run('./configure')
-                        run(
-                            'bazel build --config=opt //tensorflow/tools/pip_package:build_pip_package --incompatible_load_argument_is_label=false')
+                        run('bazel build --config=opt //tensorflow/tools/pip_package:build_pip_package')
                         run('bazel-bin/tensorflow/tools/pip_package/build_pip_package {}'.format(release_to))
                     run('pip install {whl}'.format(whl=whl))
         elif kwargs.get('from') == 'pypi' or 'from' not in kwargs:
@@ -127,6 +133,35 @@ def install_opencv2(virtual_env=None, *args, **kwargs):
                                        "-D PYTHON2_LIBRARY='{virtual_env}/bin'".format(virtual_env=virtual_env))
 
 
-def install_tensorboard3(virtual_env=None, *args, **kwargs):
+def install_tensorboard3(extra_opts=None, virtual_env=None, *args, **kwargs):
     home = run('echo $HOME', quiet=True)
     virtual_env = virtual_env or '{home}/venvs/tflow'.format(home=home)
+    notebook_dir = kwargs.get('notebook_dir', '{home}/notebooks'.format(home=home))
+
+    conf_name = 'tensorboard'
+
+    with shell_env(PATH='{}/bin:$PATH'.format(virtual_env), VIRTUAL_ENV=virtual_env):
+        run('pip install -U tensorboard')
+
+        '''
+        listen_ip, notebook_dir, pythonpath,
+         listen_port='8888', conf_name='jupyter_notebook',
+         extra_opts=None, **kwargs)
+        '''
+        install_upgrade_service(
+            conf_name,
+            conf_local_filepath=kwargs.get('systemd-conf-file'),
+            context={
+                'ExecStart': ' '.join(
+                    ('{pythonpath}/bin/jupyter notebook'.format(pythonpath=virtual_env),
+                     "--NotebookApp.notebook_dir='{notebook_dir}'".format(notebook_dir=notebook_dir),
+                     '--NotebookApp.ip={listen_ip}'.format(listen_ip=kwargs.get('notebook_ip', '0.0.0.0')),
+                     '--NotebookApp.port={listen_port}'.format(listen_port=int(kwargs.get('listen_port', '8888'))),
+                     '--Session.username={User}'.format(User=kwargs['User']),
+                     extra_opts if extra_opts else '')),
+                'Environments': kwargs['Environments'],
+                'WorkingDirectory': virtual_env,
+                'User': kwargs['User'], 'Group': kwargs['Group']
+            }
+        )
+    return restart_systemd(conf_name)
