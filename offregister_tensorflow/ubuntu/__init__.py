@@ -16,9 +16,6 @@ def install_tensorflow0(python3=False, virtual_env=None, *args, **kwargs):
     apt_depends('build-essential', 'sudo', 'git-core', 'libffi-dev', 'libssl-dev',
                 'python-software-properties', 'libatlas-dev', 'liblapack-dev')
 
-    if not cmd_avail('virtualenv'):
-        sudo('pip install virtualenv')
-
     home = run('echo $HOME', quiet=True)
     virtual_env = virtual_env or '{home}/venvs/tflow'.format(home=home)
 
@@ -38,8 +35,9 @@ def install_tensorflow0(python3=False, virtual_env=None, *args, **kwargs):
             run('python3 -m venv "{virtual_env}"'.format(virtual_env=virtual_env),
                 shell_escape=False)
         else:
-            run('pip2 install -U pip')
             run('pip2 install pip=={pip_version}'.format(pip_version=pip_version))
+            if not cmd_avail('virtualenv'):
+                sudo('pip2 install virtualenv')
             run('virtualenv --system-site-packages "{virtual_env}"'.format(virtual_env=virtual_env), shell_escape=False)
 
     if not exists(virtual_env):
