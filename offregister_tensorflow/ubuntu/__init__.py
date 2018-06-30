@@ -1,7 +1,7 @@
 from os import environ
 
 from fabric.api import run, sudo
-from fabric.context_managers import cd, shell_env, settings
+from fabric.context_managers import cd, shell_env
 from fabric.contrib.files import exists
 from offregister_bazel.ubuntu import install_bazel
 from offregister_fab_utils.apt import apt_depends
@@ -28,7 +28,10 @@ def install_tensorflow0(python3=False, virtual_env=None, *args, **kwargs):
     pip_version = kwargs.get('pip_version', '9.0.3')
     virtual_env_dir = virtual_env[:virtual_env.rfind('/')]
     if not exists(virtual_env_dir) or not exists(virtual_env):
-        run('mkdir -p "{virtual_env_dir}"'.format(virtual_env_dir=virtual_env_dir), shell_escape=False)
+        sudo('mkdir -p "{virtual_env_dir}"'.format(virtual_env_dir=virtual_env_dir), shell_escape=False)
+        user_group = run('echo $(id -un):$(id -gn)', quiet=True)
+        sudo('chown -R {user_group} "{virtual_env_dir}"'.format(user_group=user_group, virtual_env_dir=virtual_env_dir),
+             shell_escape=False)
         if python3:
             run('pip3 install pip=={pip_version}'.format(pip_version=pip_version))
             # `--system-site-packages` didn't install a pip
