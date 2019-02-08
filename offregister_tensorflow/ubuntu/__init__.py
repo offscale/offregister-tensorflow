@@ -13,8 +13,8 @@ from offregister_opencv.base import dl_install_opencv
 
 
 def install_tensorflow0(python3=False, virtual_env=None, *args, **kwargs):
-    apt_depends('build-essential', 'sudo', 'git-core', 'libffi-dev', 'libssl-dev',
-                'python-software-properties', 'libatlas-dev', 'liblapack-dev')
+    apt_depends('build-essential', 'sudo', 'git', 'libffi-dev', 'libssl-dev',
+                'software-properties-common', 'libatlas-base-dev')
 
     home = run('echo $HOME', quiet=True)
     virtual_env = virtual_env or '{home}/venvs/tflow'.format(home=home)
@@ -54,9 +54,9 @@ def install_tensorflow0(python3=False, virtual_env=None, *args, **kwargs):
             run('mkdir -p repos')
             with cd('repos'):
                 tf_repo = 'tensorflow-for-py3' if python3 else 'tensorflow'
-                clone_or_update(repo='tensorflow', team='tensorflow', branch=kwargs.get('tensorflow_branch', 'r1.8'),
-                                to_dir=tf_repo,
-                                skip_reset=True, skip_checkout=False)
+                clone_or_update(repo='tensorflow', team='tensorflow',
+                                branch=kwargs.get('tensorflow_tag', '1.13.0-rc0'),
+                                to_dir=tf_repo, skip_reset=True, skip_checkout=True)
                 with cd(tf_repo):
                     release_to = '{home}/repos/tensorflow_pkg'.format(home=home)
                     if kwargs.get('force_rebuild'):
@@ -89,7 +89,8 @@ def install_tensorflow0(python3=False, virtual_env=None, *args, **kwargs):
                                        TF_SET_ANDROID_WORKSPACE='0',
                                        TF_NEED_KAFKA='0',
                                        TF_CUDA_CLANG='0',
-                                       TF_DOWNLOAD_CLANG='0'):
+                                       TF_DOWNLOAD_CLANG='0',
+                                       TF_NEED_ROCM='0'):
                             run('./configure')
                         run('bazel build --config=opt //tensorflow/tools/pip_package:build_pip_package')
                         run('bazel-bin/tensorflow/tools/pip_package/build_pip_package {}'.format(release_to))
