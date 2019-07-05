@@ -1,8 +1,11 @@
+from functools import partial
 from os import environ
 
 from fabric.api import run, sudo
 from fabric.context_managers import cd, shell_env
 from fabric.contrib.files import exists
+from fabric.operations import _run_command
+
 from offregister_bazel.ubuntu import install_bazel
 from offregister_fab_utils.apt import apt_depends
 from offregister_fab_utils.fs import cmd_avail
@@ -25,7 +28,9 @@ def install_tensorflow0(python3=False, virtual_env=None, *args, **kwargs):
         apt_depends('python2.7', 'python2.7-dev', 'python-dev', 'python-pip', 'python-apt',
                     'python-numpy', 'python-wheel')
 
-    pip_version = kwargs.get('pip_version', '9.0.3')
+    run_cmd = partial(_run_command, sudo=kwargs.get('use_sudo'))
+
+    pip_version = kwargs.get('pip_version', False)
     virtual_env_dir = virtual_env[:virtual_env.rfind('/')]
     if not exists(virtual_env_dir) or not exists(virtual_env):
         sudo('mkdir -p "{virtual_env_dir}"'.format(virtual_env_dir=virtual_env_dir), shell_escape=False)
@@ -33,21 +38,34 @@ def install_tensorflow0(python3=False, virtual_env=None, *args, **kwargs):
         sudo('chown -R {user_group} "{virtual_env_dir}"'.format(user_group=user_group, virtual_env_dir=virtual_env_dir),
              shell_escape=False)
         if python3:
-            run('pip3 install pip=={pip_version}'.format(pip_version=pip_version))
+            if pip_version:
+                sudo('pip3 install pip=={pip_version}'.format(pip_version=pip_version))
+            else:
+                sudo('pip3 install -U pip setuptools')
             # `--system-site-packages` didn't install a pip
             run('python3 -m venv "{virtual_env}"'.format(virtual_env=virtual_env),
                 shell_escape=False)
+
+            sudo('pip3 install keras_applications==1.0.6 --no-deps')
+            sudo('pip3 install keras_preprocessing==1.0.5 --no-deps')
+            sudo('pip3 install h5py==2.8.0')
         else:
-            run('pip2 install pip=={pip_version}'.format(pip_version=pip_version))
+            sudo('pip2 install pip=={pip_version}'.format(pip_version=pip_version))
             if not cmd_avail('virtualenv'):
                 sudo('pip2 install virtualenv')
             run('virtualenv --system-site-packages "{virtual_env}"'.format(virtual_env=virtual_env), shell_escape=False)
+            sudo('pip2 install keras_applications==1.0.6 --no-deps')
+            sudo('pip2 install keras_preprocessing==1.0.5 --no-deps')
+            sudo('pip2 install h5py==2.8.0')
 
     if not exists(virtual_env):
         raise ReferenceError('Virtualenv does not exist')
 
     with shell_env(VIRTUAL_ENV=virtual_env, PATH="{}/bin:$PATH".format(virtual_env)):
-        run('pip install pip=={pip_version}'.format(pip_version=pip_version))
+        if pip_version:
+            run('pip install pip=={pip_version}'.format(pip_version=pip_version))
+        else:
+            run('pip install -U pip setuptools')
         run('pip install -U jupyter')
         if kwargs.get('from') == 'source':
             run('pip uninstall -y tensorflow', warn_only=True, quiet=True)
@@ -55,18 +73,20 @@ def install_tensorflow0(python3=False, virtual_env=None, *args, **kwargs):
             with cd('repos'):
                 tf_repo = 'tensorflow-for-py3' if python3 else 'tensorflow'
                 clone_or_update(repo='tensorflow', team='tensorflow',
-                                branch=kwargs.get('tensorflow_tag', '1.13.0-rc0'),
-                                to_dir=tf_repo, skip_reset=True, skip_checkout=True)
+                                branch=kwargs.get('tensorflow_tag', 'v2.0.0'),
+                                to_dir=tf_repo, skip_reset=True, skip_checkout=True, use_sudo=kwargs.get('use_sudo'))
                 with cd(tf_repo):
                     release_to = '{home}/repos/tensorflow_pkg'.format(home=home)
                     if kwargs.get('force_rebuild'):
-                        run('rm -rf {}'.format(release_to))
+                        run_cmd('rm -rf {}'.format(release_to))
 
                     whl = '{release_to}/*cp{version}*.whl'.format(release_to=release_to,
                                                                   version=3 if python3 else 2)
                     if not exists(release_to) or not exists(whl):
                         if python3:
-                            run('pip install numpy wheel')
+                            run_cmd('pip install numpy wheel')
+
+                        run_cmd('pip install keras_preprocessing')
 
                         install_bazel()
                         with shell_env(PYTHON_BIN_PATH='{}/bin/python'.format(virtual_env),
@@ -93,7 +113,7 @@ def install_tensorflow0(python3=False, virtual_env=None, *args, **kwargs):
                                        TF_NEED_ROCM='0'):
                             run('./configure')
                         run('bazel build --config=opt //tensorflow/tools/pip_package:build_pip_package')
-                        run('bazel-bin/tensorflow/tools/pip_package/build_pip_package {}'.format(release_to))
+                        run('bazel-bin/tensorflow/tools/pip_package/build_pip_package --nightly_flag {}'.format(release_to))
                     run('pip install {whl}'.format(whl=whl))
         elif kwargs.get('from') == 'pypi' or 'from' not in kwargs:
             run('pip install -U tensorflow')
@@ -111,7 +131,7 @@ def install_jupyter_notebook1(virtual_env=None, *args, **kwargs):
     user, group = (lambda ug: (ug[0], ug[1]) if len(ug) > 1 else (ug[0], ug[0]))(
         run('''printf '%s\t%s' "$USER" "$GROUP"''', quiet=True, shell_escape=False).split('\t'))
     notebook_dir = kwargs.get('notebook_dir', '{home}/notebooks'.format(home=home))
-    run("mkdir -p '{notebook_dir}'".format(notebook_dir=notebook_dir))
+    (sudo if kwargs.get('use_sudo') else run)("mkdir -p '{notebook_dir}'".format(notebook_dir=notebook_dir))
 
     return install_jupyter_notebook_server(
         pythonpath=virtual_env,
@@ -136,6 +156,7 @@ def install_opencv2(virtual_env=None, *args, **kwargs):
 
 
 def install_tensorboard3(extra_opts=None, virtual_env=None, *args, **kwargs):
+    run_cmd = partial(_run_command, sudo=kwargs.get('use_sudo'))
     home = run('echo $HOME', quiet=True)
     virtual_env = virtual_env or '{home}/venvs/tflow'.format(home=home)
     notebook_dir = kwargs.get('notebook_dir', '{home}/notebooks'.format(home=home))
@@ -147,8 +168,8 @@ def install_tensorboard3(extra_opts=None, virtual_env=None, *args, **kwargs):
 
         '''
         listen_ip, notebook_dir, pythonpath,
-         listen_port='8888', conf_name='jupyter_notebook',
-         extra_opts=None, **kwargs)
+        listen_port='8888', conf_name='jupyter_notebook',
+        extra_opts=None, **kwargs)
         '''
         install_upgrade_service(
             conf_name,
