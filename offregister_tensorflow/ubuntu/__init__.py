@@ -15,7 +15,7 @@ from offregister_jupyter.systemd import install_jupyter_notebook_server
 from offregister_opencv.base import dl_install_opencv
 
 
-def install_tensorflow0(python3=False, virtual_env=None, *args, **kwargs):
+def install_tensorflow0(python3=False, virtual_env=None, virtual_env_args=None, *args, **kwargs):
     apt_depends('build-essential', 'sudo', 'git', 'libffi-dev', 'libssl-dev',
                 'software-properties-common', 'libatlas-base-dev')
 
@@ -43,7 +43,9 @@ def install_tensorflow0(python3=False, virtual_env=None, *args, **kwargs):
             else:
                 sudo('pip3 install -U pip setuptools')
             # `--system-site-packages` didn't install a pip
-            run('python3 -m venv "{virtual_env}"'.format(virtual_env=virtual_env),
+            run('python3 -m venv "{virtual_env}" {virtual_env_args}'.format(
+                virtual_env=virtual_env, virtual_env_args=virtual_env_args or ''
+            ),
                 shell_escape=False)
 
             sudo('pip3 install keras_applications==1.0.6 --no-deps')
@@ -113,7 +115,8 @@ def install_tensorflow0(python3=False, virtual_env=None, *args, **kwargs):
                                        TF_NEED_ROCM='0'):
                             run('./configure')
                         run('bazel build --config=opt //tensorflow/tools/pip_package:build_pip_package')
-                        run('bazel-bin/tensorflow/tools/pip_package/build_pip_package --nightly_flag {}'.format(release_to))
+                        run('bazel-bin/tensorflow/tools/pip_package/build_pip_package --nightly_flag {}'.format(
+                            release_to))
                     run('pip install {whl}'.format(whl=whl))
         elif kwargs.get('from') == 'pypi' or 'from' not in kwargs:
             run('pip install -U tensorflow')
@@ -148,15 +151,23 @@ def install_jupyter_notebook1(virtual_env=None, *args, **kwargs):
     )
 
 
-def install_opencv2(virtual_env=None, *args, **kwargs):
+def install_opencv2(virtual_env=None, python3=False, *args, **kwargs):
     home = run('echo $HOME', quiet=True)
     virtual_env = virtual_env or '{home}/venvs/tflow'.format(home=home)
-    dl_install_opencv(extra_cmake_args="-D PYTHON2_PACKAGES_PATH='{virtual_env}/lib/python2.7/site-packages' "
-                                       "-D PYTHON2_LIBRARY='{virtual_env}/bin'".format(virtual_env=virtual_env))
+
+    site_packages = run('{virtual_env}/bin/python -c "import site; print(site.getsitepackages()[0])"'.format(
+        virtual_env=virtual_env
+    ))
+
+    dl_install_opencv(
+        extra_cmake_args='OPENCV_PYTHON3_INSTALL_PATH={site_packages}'.format(site_packages=site_packages)
+        if python3
+        else "-D PYTHON2_PACKAGES_PATH='{virtual_env}/lib/python2.7/site-packages' "
+             "-D PYTHON2_LIBRARY='{virtual_env}/bin'".format(virtual_env=virtual_env)
+    )
 
 
 def install_tensorboard3(extra_opts=None, virtual_env=None, *args, **kwargs):
-    run_cmd = partial(_run_command, sudo=kwargs.get('use_sudo'))
     home = run('echo $HOME', quiet=True)
     virtual_env = virtual_env or '{home}/venvs/tflow'.format(home=home)
     notebook_dir = kwargs.get('notebook_dir', '{home}/notebooks'.format(home=home))
