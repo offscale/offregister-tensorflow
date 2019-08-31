@@ -5,13 +5,11 @@ from fabric.api import run, sudo
 from fabric.context_managers import cd, shell_env
 from fabric.contrib.files import exists
 from fabric.operations import _run_command
-
 from offregister_bazel.ubuntu import install_bazel
 from offregister_fab_utils.apt import apt_depends
 from offregister_fab_utils.fs import cmd_avail
 from offregister_fab_utils.git import clone_or_update
 from offregister_fab_utils.ubuntu.systemd import restart_systemd, install_upgrade_service
-from offregister_jupyter.systemd import install_jupyter_notebook_server
 from offregister_opencv.base import dl_install_opencv
 
 
@@ -136,18 +134,29 @@ def install_jupyter_notebook1(virtual_env=None, *args, **kwargs):
     notebook_dir = kwargs.get('notebook_dir', '{home}/notebooks'.format(home=home))
     (sudo if kwargs.get('use_sudo') else run)("mkdir -p '{notebook_dir}'".format(notebook_dir=notebook_dir))
 
-    return install_jupyter_notebook_server(
-        pythonpath=virtual_env,
-        notebook_dir=notebook_dir,
-        listen_ip='0.0.0.0',  # kwargs['public_ipv4'],
-        listen_port=int(kwargs.get('listen_port', '8888')),
-        Environments='Environment=VIRTUAL_ENV={virtual_env}\n'
-                     'Environment=PYTHONPATH={virtual_env}'.format(virtual_env=virtual_env),
-        User=user, Group=group,
-        extra_opts=' '.join(("--NotebookApp.password='{password}'".format(password=environ['PASSWORD']),
-                             '--NotebookApp.password_required=True',
-                             '--NotebookApp.iopub_data_rate_limit=2147483647',  # send output for longer
-                             '--no-browser', '--NotebookApp.open_browser=False'))
+    return install_upgrade_service(
+        'jupyter_notebook',
+        conf_local_filepath=kwargs.get('systemd-conf-file'),
+        context={
+            'ExecStart': ' '.join((
+                '{virtual_env}/bin/jupyter'.format(virtual_env=virtual_env),
+                'notebook',
+                "--NotebookApp.notebook_dir='{notebook_dir}'".format(notebook_dir=notebook_dir),
+                "--NotebookApp.ip='{listen_ip}'".format(listen_ip=kwargs.get('listen_ip', '127.0.0.1')),
+                "--NotebookApp.port='{listen_port}'".format(listen_port=kwargs.get('listen_port', '8888')),
+                "--Session.username='{User}'".format(User=user),
+                "--NotebookApp.password='{password}'".format(password=environ['PASSWORD']),
+                "--NotebookApp.password_required='True'",
+                "--NotebookApp.allow_remote_access='True'",
+                "--NotebookApp.iopub_data_rate_limit='2147483647'",
+                '--no-browser',
+                "--NotebookApp.open_browser='False'"
+            )),
+            'Environments': kwargs['Environments'],
+            'WorkingDirectory': notebook_dir,
+            'User': user,
+            'Group': group
+        }
     )
 
 
@@ -167,15 +176,16 @@ def install_opencv2(virtual_env=None, python3=False, *args, **kwargs):
     )
 
 
-def install_tensorboard3(extra_opts=None, virtual_env=None, *args, **kwargs):
+def install_tensorboard3(extra_opts=None, virtual_env=None, pip_install_args=None, *args, **kwargs):
     home = run('echo $HOME', quiet=True)
     virtual_env = virtual_env or '{home}/venvs/tflow'.format(home=home)
-    notebook_dir = kwargs.get('notebook_dir', '{home}/notebooks'.format(home=home))
+    tensorboard_logs_dir = kwargs.get('tensorboard_logs_dir', '{home}/tensorboard_logs_dir'.format(home=home))
+    run('mkdir -p {tensorboard_logs_dir}'.format(tensorboard_logs_dir=tensorboard_logs_dir))
 
     conf_name = 'tensorboard'
 
     with shell_env(PATH='{}/bin:$PATH'.format(virtual_env), VIRTUAL_ENV=virtual_env):
-        run('pip install -U tensorboard')
+        run('pip install {pip_install_args} -U tensorboard'.format(pip_install_args=pip_install_args or ''))
 
         '''
         listen_ip, notebook_dir, pythonpath,
@@ -187,14 +197,11 @@ def install_tensorboard3(extra_opts=None, virtual_env=None, *args, **kwargs):
             conf_local_filepath=kwargs.get('systemd-conf-file'),
             context={
                 'ExecStart': ' '.join(
-                    ('{pythonpath}/bin/jupyter notebook'.format(pythonpath=virtual_env),
-                     "--NotebookApp.notebook_dir='{notebook_dir}'".format(notebook_dir=notebook_dir),
-                     '--NotebookApp.ip={listen_ip}'.format(listen_ip=kwargs.get('notebook_ip', '0.0.0.0')),
-                     '--NotebookApp.port={listen_port}'.format(listen_port=int(kwargs.get('listen_port', '8888'))),
-                     '--Session.username={User}'.format(User=kwargs['User']),
+                    ('{virtual_env}/bin/tensorboard'.format(virtual_env=virtual_env),
+                     "--logdir '{tensorboard_logs_dir}'".format(tensorboard_logs_dir=tensorboard_logs_dir),
                      extra_opts if extra_opts else '')),
                 'Environments': kwargs['Environments'],
-                'WorkingDirectory': virtual_env,
+                'WorkingDirectory': tensorboard_logs_dir,
                 'User': kwargs['User'], 'Group': kwargs['Group']
             }
         )
