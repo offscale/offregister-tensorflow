@@ -2,15 +2,14 @@ from functools import partial
 from os import environ
 
 from fabric.api import run, sudo
-from fabric.context_managers import cd, shell_env
+from fabric.context_managers import shell_env
 from fabric.contrib.files import exists
 from fabric.operations import _run_command
-from offregister_bazel.ubuntu import install_bazel
 from offregister_fab_utils.apt import apt_depends
-from offregister_fab_utils.fs import cmd_avail
-from offregister_fab_utils.git import clone_or_update
 from offregister_fab_utils.ubuntu.systemd import restart_systemd, install_upgrade_service
 from offregister_opencv.base import dl_install_opencv
+
+from offregister_tensorflow.ubuntu.utils import build_from_source, setup_gpu, instantiate_virtual_env
 
 
 def install_tensorflow0(python3=False, virtual_env=None, virtual_env_args=None, *args, **kwargs):
@@ -29,34 +28,7 @@ def install_tensorflow0(python3=False, virtual_env=None, virtual_env_args=None, 
     run_cmd = partial(_run_command, sudo=kwargs.get('use_sudo'))
 
     pip_version = kwargs.get('pip_version', False)
-    virtual_env_dir = virtual_env[:virtual_env.rfind('/')]
-    if not exists(virtual_env_dir) or not exists(virtual_env):
-        sudo('mkdir -p "{virtual_env_dir}"'.format(virtual_env_dir=virtual_env_dir), shell_escape=False)
-        user_group = run('echo $(id -un):$(id -gn)', quiet=True)
-        sudo('chown -R {user_group} "{virtual_env_dir}"'.format(user_group=user_group, virtual_env_dir=virtual_env_dir),
-             shell_escape=False)
-        if python3:
-            if pip_version:
-                sudo('pip3 install pip=={pip_version}'.format(pip_version=pip_version))
-            else:
-                sudo('pip3 install -U pip setuptools')
-            # `--system-site-packages` didn't install a pip
-            run('python3 -m venv "{virtual_env}" {virtual_env_args}'.format(
-                virtual_env=virtual_env, virtual_env_args=virtual_env_args or ''
-            ),
-                shell_escape=False)
-
-            sudo('pip3 install keras_applications==1.0.6 --no-deps')
-            sudo('pip3 install keras_preprocessing==1.0.5 --no-deps')
-            sudo('pip3 install h5py==2.8.0')
-        else:
-            sudo('pip2 install pip=={pip_version}'.format(pip_version=pip_version))
-            if not cmd_avail('virtualenv'):
-                sudo('pip2 install virtualenv')
-            run('virtualenv --system-site-packages "{virtual_env}"'.format(virtual_env=virtual_env), shell_escape=False)
-            sudo('pip2 install keras_applications==1.0.6 --no-deps')
-            sudo('pip2 install keras_preprocessing==1.0.5 --no-deps')
-            sudo('pip2 install h5py==2.8.0')
+    instantiate_virtual_env(pip_version, python3, virtual_env, virtual_env_args)
 
     if not exists(virtual_env):
         raise ReferenceError('Virtualenv does not exist')
@@ -67,57 +39,25 @@ def install_tensorflow0(python3=False, virtual_env=None, virtual_env_args=None, 
         else:
             run('pip install -U pip setuptools')
         run('pip install -U jupyter')
+
         if kwargs.get('from') == 'source':
-            run('pip uninstall -y tensorflow', warn_only=True, quiet=True)
-            run('mkdir -p repos')
-            with cd('repos'):
-                tf_repo = 'tensorflow-for-py3' if python3 else 'tensorflow'
-                clone_or_update(repo='tensorflow', team='tensorflow',
-                                branch=kwargs.get('tensorflow_tag', 'v2.0.0'),
-                                to_dir=tf_repo, skip_reset=True, skip_checkout=True, use_sudo=kwargs.get('use_sudo'))
-                with cd(tf_repo):
-                    release_to = '{home}/repos/tensorflow_pkg'.format(home=home)
-                    if kwargs.get('force_rebuild'):
-                        run_cmd('rm -rf {}'.format(release_to))
+            gpu = kwargs.get('GPU')
+            if gpu:
+                setup_gpu(download_dir='{home}/Downloads'.format(home=home))
 
-                    whl = '{release_to}/*cp{version}*.whl'.format(release_to=release_to,
-                                                                  version=3 if python3 else 2)
-                    if not exists(release_to) or not exists(whl):
-                        if python3:
-                            run_cmd('pip install numpy wheel')
-
-                        run_cmd('pip install keras_preprocessing')
-
-                        install_bazel()
-                        with shell_env(PYTHON_BIN_PATH='{}/bin/python'.format(virtual_env),
-                                       PYTHON_LIB_PATH=virtual_env,
-                                       TF_DOWNLOAD_MKL='1',
-                                       TF_NEED_MKL='1',
-                                       CC_OPT_FLAGS='-march=native',
-                                       TF_NEED_JEMALLOC='1',
-                                       TF_NEED_GCP='0',
-                                       TF_NEED_HDFS='0',
-                                       TF_ENABLE_XLA='0',  # JIT
-                                       TF_NEED_VERBS='0',
-                                       TF_NEED_OPENCL='0',
-                                       TF_NEED_OPENCL_SYCL='0',
-                                       TF_NEED_COMPUTECPP='0',
-                                       TF_NEED_CUDA='0',
-                                       TF_NEED_MPI='0',
-                                       TF_NEED_S3='0',
-                                       TF_NEED_GDR='0',
-                                       TF_SET_ANDROID_WORKSPACE='0',
-                                       TF_NEED_KAFKA='0',
-                                       TF_CUDA_CLANG='0',
-                                       TF_DOWNLOAD_CLANG='0',
-                                       TF_NEED_ROCM='0'):
-                            run('./configure')
-                        run('bazel build --config=opt //tensorflow/tools/pip_package:build_pip_package')
-                        run('bazel-bin/tensorflow/tools/pip_package/build_pip_package --nightly_flag {}'.format(
-                            release_to))
-                    run('pip install {whl}'.format(whl=whl))
+            whl = build_from_source(repo_dir='{home}/repos'.format(home=home), gpu=gpu,
+                                    tensorflow_tag=kwargs.get('tensorflow_tag', 'v1.14.0'),
+                                    force_rebuild=kwargs.get('force_rebuild'), use_sudo=kwargs.get('use_sudo'),
+                                    python3=python3, run_cmd=run_cmd, virtual_env=virtual_env)
+            if whl.endswith('.whl'):
+                run('pip install {whl}'.format(whl=whl))
         elif kwargs.get('from') == 'pypi' or 'from' not in kwargs:
             run('pip install -U tensorflow')
+
+        if kwargs.get('skip_tflow_example'):
+            return run('python -c "from tensorflow import __version__;'
+                       ' print(\'Installed TensorFlow {} successfully\'.format(__version__))"')
+
         hello_world = ''.join(l.strip() for l in '''import tensorflow as tf;
         hello = tf.constant('TensorFlow works!');
         sess = tf.Session();
