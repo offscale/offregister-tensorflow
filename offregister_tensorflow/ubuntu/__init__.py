@@ -16,7 +16,7 @@ def install_tensorflow0(python3=False, virtual_env=None, virtual_env_args=None, 
     apt_depends('build-essential', 'sudo', 'git', 'libffi-dev', 'libssl-dev',
                 'software-properties-common', 'libatlas-base-dev')
 
-    home = run('echo $HOME', quiet=True)
+    home = kwargs.get('HOMEDIR', run('echo $HOME', quiet=True))
     virtual_env = virtual_env or '{home}/venvs/tflow'.format(home=home)
 
     if python3:
@@ -40,15 +40,22 @@ def install_tensorflow0(python3=False, virtual_env=None, virtual_env_args=None, 
             run('pip install -U pip setuptools')
         run('pip install -U jupyter')
 
+        build_env = {}
+
         if kwargs.get('from') == 'source':
             gpu = kwargs.get('GPU')
             if gpu:
-                setup_gpu(download_dir='{home}/Downloads'.format(home=home))
+                build_env.update(setup_gpu(download_dir='{home}/Downloads'.format(home=home)))
 
-            whl = build_from_source(repo_dir='{home}/repos'.format(home=home), gpu=gpu,
+            whl = build_from_source(repo_dir='{home}/repos'.format(home=home),
+                                    gpu=gpu,
+                                    build_env=build_env,
                                     tensorflow_tag=kwargs.get('tensorflow_tag', 'v1.14.0'),
-                                    force_rebuild=kwargs.get('force_rebuild'), use_sudo=kwargs.get('use_sudo'),
-                                    python3=python3, run_cmd=run_cmd, virtual_env=virtual_env)
+                                    force_rebuild=kwargs.get('force_rebuild'),
+                                    use_sudo=kwargs.get('use_sudo'),
+                                    python3=python3,
+                                    run_cmd=run_cmd,
+                                    virtual_env=virtual_env)
             if whl.endswith('.whl'):
                 run('pip install {whl}'.format(whl=whl))
         elif kwargs.get('from') == 'pypi' or 'from' not in kwargs:
@@ -67,12 +74,14 @@ def install_tensorflow0(python3=False, virtual_env=None, virtual_env_args=None, 
 
 
 def install_jupyter_notebook1(virtual_env=None, *args, **kwargs):
-    home = run('echo $HOME', quiet=True)
+    home = kwargs.get('HOMEDIR', run('echo $HOME', quiet=True))
     virtual_env = virtual_env or '{home}/venvs/tflow'.format(home=home)
     user, group = (lambda ug: (ug[0], ug[1]) if len(ug) > 1 else (ug[0], ug[0]))(
         run('''printf '%s\t%s' "$USER" "$GROUP"''', quiet=True, shell_escape=False).split('\t'))
     notebook_dir = kwargs.get('notebook_dir', '{home}/notebooks'.format(home=home))
-    (sudo if kwargs.get('use_sudo') else run)("mkdir -p '{notebook_dir}'".format(notebook_dir=notebook_dir))
+    (sudo if kwargs.get('use_sudo') else run)(
+        "mkdir -p '{notebook_dir}'".format(notebook_dir=notebook_dir)
+    )
 
     return install_upgrade_service(
         'jupyter_notebook',
@@ -101,15 +110,19 @@ def install_jupyter_notebook1(virtual_env=None, *args, **kwargs):
 
 
 def install_opencv2(virtual_env=None, python3=False, *args, **kwargs):
-    home = run('echo $HOME', quiet=True)
+    home = kwargs.get('HOMEDIR', run('echo $HOME', quiet=True))
     virtual_env = virtual_env or '{home}/venvs/tflow'.format(home=home)
 
-    site_packages = run('{virtual_env}/bin/python -c "import site; print(site.getsitepackages()[0])"'.format(
-        virtual_env=virtual_env
-    ))
+    site_packages = run(
+        '{virtual_env}/bin/python -c "import site; print(site.getsitepackages()[0])"'.format(
+            virtual_env=virtual_env
+        )
+    )
 
     dl_install_opencv(
-        extra_cmake_args='OPENCV_PYTHON3_INSTALL_PATH={site_packages}'.format(site_packages=site_packages)
+        extra_cmake_args='OPENCV_PYTHON3_INSTALL_PATH={site_packages}'.format(
+            site_packages=site_packages
+        )
         if python3
         else "-D PYTHON2_PACKAGES_PATH='{virtual_env}/lib/python2.7/site-packages' "
              "-D PYTHON2_LIBRARY='{virtual_env}/bin'".format(virtual_env=virtual_env)
@@ -117,9 +130,11 @@ def install_opencv2(virtual_env=None, python3=False, *args, **kwargs):
 
 
 def install_tensorboard3(extra_opts=None, virtual_env=None, pip_install_args=None, *args, **kwargs):
-    home = run('echo $HOME', quiet=True)
+    home = kwargs.get('HOMEDIR', run('echo $HOME', quiet=True))
     virtual_env = virtual_env or '{home}/venvs/tflow'.format(home=home)
-    tensorboard_logs_dir = kwargs.get('tensorboard_logs_dir', '{home}/tensorboard_logs_dir'.format(home=home))
+    tensorboard_logs_dir = kwargs.get(
+        'tensorboard_logs_dir', '{home}/tensorboard_logs_dir'.format(home=home)
+    )
     run('mkdir -p {tensorboard_logs_dir}'.format(tensorboard_logs_dir=tensorboard_logs_dir))
 
     conf_name = 'tensorboard'
