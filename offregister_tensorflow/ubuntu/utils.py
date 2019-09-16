@@ -80,8 +80,9 @@ def setup_gpu(download_dir):
     )
 
 
-def build_from_source(repo_dir, force_rebuild, tensorflow_tag, build_env,
-                      gpu, use_sudo, python3, run_cmd, virtual_env):
+def build_from_source(repo_dir, force_rebuild, tensorflow_tag, tensorflow_branch,
+                      build_env, gpu, use_sudo, python3, run_cmd, virtual_env):
+    apt_depends('unzip')
     run('pip uninstall -y tensorflow', warn_only=True, quiet=True)
     run('mkdir -p {repo_dir}'.format(repo_dir=repo_dir))
 
@@ -90,7 +91,7 @@ def build_from_source(repo_dir, force_rebuild, tensorflow_tag, build_env,
     clone_or_update(repo='tensorflow', team='tensorflow',
                     to_dir=tf_repo, skip_reset=True, skip_checkout=True,
                     use_sudo=use_sudo,
-                    **({'branch': tensorflow_tag} if tensorflow_tag == 'master' else {'tag': tensorflow_tag}))
+                    **({'branch': tensorflow_branch} if tensorflow_branch else {'tag': tensorflow_tag}))
     with cd(tf_repo):
         version = 3 if python3 else 2
         processor = 'gpu' if gpu else 'cpu'  # 'tpu'
