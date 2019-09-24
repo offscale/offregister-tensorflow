@@ -80,8 +80,8 @@ def setup_gpu(download_dir):
     )
 
 
-def build_from_source(repo_dir, force_rebuild, tensorflow_tag, tensorflow_branch,
-                      build_env, gpu, use_sudo, python3, run_cmd, virtual_env):
+def build_from_source(repo_dir, force_rebuild, tensorflow_tag, tensorflow_branch, build_env,
+                      gpu, use_sudo, python3, run_cmd, virtual_env, extra_build_args=''):
     apt_depends('unzip')
     run('pip uninstall -y tensorflow', warn_only=True, quiet=True)
     run('mkdir -p {repo_dir}'.format(repo_dir=repo_dir))
@@ -146,7 +146,6 @@ def build_from_source(repo_dir, force_rebuild, tensorflow_tag, tensorflow_branch
         with shell_env(**update_d(default_build_env, build_env)):
             run('env')
             run('./configure')
-        run('bazel build --config=opt //tensorflow/tools/pip_package:build_pip_package')
-        run('bazel-bin/tensorflow/tools/pip_package/build_pip_package --nightly_flag {}'.format(
-            release_to))
+        run('bazel build --config=opt //tensorflow/tools/pip_package:build_pip_package {}'.format(extra_build_args))
+        run('bazel-bin/tensorflow/tools/pip_package/build_pip_package --nightly_flag {}'.format(release_to))
     return whl

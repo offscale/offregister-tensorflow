@@ -56,7 +56,8 @@ def install_tensorflow0(python3=False, virtual_env=None, virtual_env_args=None, 
                                     use_sudo=kwargs.get('use_sudo'),
                                     python3=python3,
                                     run_cmd=run_cmd,
-                                    virtual_env=virtual_env)
+                                    virtual_env=virtual_env,
+                                    extra_build_args=kwargs.get('extra_build_args'))
             if whl.endswith('.whl'):
                 run('pip install {whl}'.format(whl=whl))
         elif kwargs.get('from') == 'pypi' or 'from' not in kwargs:
