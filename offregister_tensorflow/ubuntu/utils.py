@@ -2,7 +2,6 @@ from fabric.context_managers import cd, shell_env
 from fabric.contrib.files import exists
 from fabric.operations import run, sudo
 from offregister_fab_utils.apt import apt_depends
-
 from offregister_fab_utils.fs import cmd_avail
 from offregister_fab_utils.git import clone_or_update
 from offutils import update_d

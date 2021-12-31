@@ -7,15 +7,15 @@ from fabric.contrib.files import exists
 from fabric.operations import _run_command
 from offregister_fab_utils.apt import apt_depends
 from offregister_fab_utils.ubuntu.systemd import (
-    restart_systemd,
     install_upgrade_service,
+    restart_systemd,
 )
 from offregister_opencv.base import dl_install_opencv
 
 from offregister_tensorflow.ubuntu.utils import (
     build_from_source,
-    setup_gpu,
     instantiate_virtual_env,
+    setup_gpu,
 )
 
 
@@ -210,13 +210,14 @@ def install_tensorboard3(
         listen_port='8888', conf_name='jupyter_notebook',
         extra_opts=None, **kwargs)
         """
+        tensorboard_exec = run("command -v tensorboard")
         install_upgrade_service(
             conf_name,
             conf_local_filepath=kwargs.get("systemd-conf-file"),
             context={
                 "ExecStart": " ".join(
                     (
-                        "{virtual_env}/bin/tensorboard".format(virtual_env=virtual_env),
+                        tensorboard_exec,
                         "--logdir '{tensorboard_logs_dir}'".format(
                             tensorboard_logs_dir=tensorboard_logs_dir
                         ),

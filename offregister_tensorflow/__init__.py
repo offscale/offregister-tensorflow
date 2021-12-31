@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 
-import yaml
 import logging
-
-from os import path
 from logging.config import dictConfig as _dictConfig
+from os import path
+
+import yaml
 
 __author__ = "Samuel Marks <@SamuelMarks>"
 __version__ = "0.0.11-alpha"
