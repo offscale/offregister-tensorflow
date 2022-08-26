@@ -1,10 +1,7 @@
-from functools import partial
 from os import environ
 
 from fabric.api import run, sudo
-from fabric.context_managers import shell_env
 from fabric.contrib.files import exists
-from fabric.operations import _run_command
 from offregister_fab_utils.apt import apt_depends
 from offregister_fab_utils.ubuntu.systemd import (
     install_upgrade_service,
@@ -23,6 +20,7 @@ def install_tensorflow0(
     python3=False, virtual_env=None, virtual_env_args=None, *args, **kwargs
 ):
     apt_depends(
+        c,
         "build-essential",
         "sudo",
         "git",
@@ -32,11 +30,12 @@ def install_tensorflow0(
         "libatlas-base-dev",
     )
 
-    home = kwargs.get("HOMEDIR", run("echo $HOME", quiet=True))
+    home = kwargs.get("HOMEDIR", c.run("echo $HOME", hide=True).stdout.rstrip())
     virtual_env = virtual_env or "{home}/venvs/tflow".format(home=home)
 
     if python3:
         apt_depends(
+            c,
             "python3-numpy",
             "python3-dev",
             "python3-pip",
@@ -45,6 +44,7 @@ def install_tensorflow0(
         )
     else:
         apt_depends(
+            c,
             "python2.7",
             "python2.7-dev",
             "python-dev",
@@ -54,71 +54,75 @@ def install_tensorflow0(
             "python-wheel",
         )
 
-    run_cmd = partial(_run_command, sudo=kwargs.get("use_sudo"))
+    run_cmd = c.sudo if kwargs.get("use_sudo", False) else c.run
 
     pip_version = kwargs.get("pip_version", False)
     instantiate_virtual_env(pip_version, python3, virtual_env, virtual_env_args)
 
-    if not exists(virtual_env):
+    if not exists(c, runner=c.run, path=virtual_env):
         raise ReferenceError("Virtualenv does not exist")
 
-    with shell_env(VIRTUAL_ENV=virtual_env, PATH="{}/bin:$PATH".format(virtual_env)):
-        if pip_version:
-            run("pip install pip=={pip_version}".format(pip_version=pip_version))
-        else:
-            run("pip install -U pip setuptools")
-        run("pip install -U jupyter")
-
-        build_env = {}
-
-        if kwargs.get("from") == "source":
-            gpu = kwargs.get("GPU")
-            if gpu:
-                build_env.update(
-                    setup_gpu(download_dir="{home}/Downloads".format(home=home))
-                )
-
-            whl = build_from_source(
-                repo_dir="{home}/repos".format(home=home),
-                gpu=gpu,
-                build_env=build_env,
-                tensorflow_tag=kwargs.get("tensorflow_tag", "v1.14.0"),
-                tensorflow_branch=kwargs.get("tensorflow_branch"),
-                force_rebuild=kwargs.get("force_rebuild"),
-                use_sudo=kwargs.get("use_sudo"),
-                python3=python3,
-                run_cmd=run_cmd,
-                virtual_env=virtual_env,
-                extra_build_args=kwargs.get("extra_build_args"),
-            )
-            if whl.endswith(".whl"):
-                run("pip install {whl}".format(whl=whl))
-        elif kwargs.get("from") == "pypi" or "from" not in kwargs:
-            run("pip install -U tensorflow")
-
-        if kwargs.get("skip_tflow_example"):
-            return run(
-                'python -c "from tensorflow import __version__;'
-                " print('Installed TensorFlow {} successfully'.format(__version__))\""
-            )
-
-        hello_world = "".join(
-            l.strip()
-            for l in """import tensorflow as tf;
-        hello = tf.constant('TensorFlow works!');
-        sess = tf.Session();
-        print(sess.run(hello))
-        """.splitlines()
+    env = dict(VIRTUAL_ENV=virtual_env, PATH="{}/bin:$PATH".format(virtual_env))
+    if pip_version:
+        c.run(
+            "python -m pip install pip=={pip_version}".format(pip_version=pip_version),
+            env=env,
         )
-        return run('python -c "{}"'.format(hello_world))
+    else:
+        c.run("python -m pip install -U pip setuptools", env=env)
+    c.run("python -m pip install -U jupyter", env=env)
+
+    build_env = {}
+
+    if kwargs.get("from") == "source":
+        gpu = kwargs.get("GPU")
+        if gpu:
+            build_env.update(
+                setup_gpu(download_dir="{home}/Downloads".format(home=home))
+            )
+
+        whl = build_from_source(
+            repo_dir="{home}/repos".format(home=home),
+            gpu=gpu,
+            build_env=build_env,
+            tensorflow_tag=kwargs.get("tensorflow_tag", "v1.14.0"),
+            tensorflow_branch=kwargs.get("tensorflow_branch"),
+            force_rebuild=kwargs.get("force_rebuild"),
+            use_sudo=kwargs.get("use_sudo"),
+            python3=python3,
+            run_cmd=run_cmd,
+            virtual_env=virtual_env,
+            extra_build_args=kwargs.get("extra_build_args"),
+        )
+        if whl.endswith(".whl"):
+            c.run("python -m pip install {whl}".format(whl=whl), env=env)
+    elif kwargs.get("from") == "pypi" or "from" not in kwargs:
+        c.run("python -m pip install -U tensorflow", env=env)
+
+    if kwargs.get("skip_tflow_example"):
+        return c.run(
+            'python -c "from tensorflow import __version__;'
+            " print('Installed TensorFlow {} successfully'.format(__version__))\"",
+            env=env,
+        )
+
+    hello_world = "".join(
+        l.strip()
+        for l in """import tensorflow as tf;
+    hello = tf.constant('TensorFlow works!');
+    sess = tf.Session();
+    print(sess.run(hello))
+    """.splitlines()
+    )
+    return c.run('python -c "{}"'.format(hello_world), env=env)
 
 
 def install_jupyter_notebook1(virtual_env=None, *args, **kwargs):
-    home = kwargs.get("HOMEDIR", run("echo $HOME", quiet=True))
+    home = kwargs.get("HOMEDIR", c.run("echo $HOME", hide=True).stdout.rstrip())
     virtual_env = virtual_env or "{home}/venvs/tflow".format(home=home)
     user, group = (lambda ug: (ug[0], ug[1]) if len(ug) > 1 else (ug[0], ug[0]))(
-        run(
-            '''printf '%s\t%s' "$USER" "$GROUP"''', quiet=True, shell_escape=False
+        c.run(
+            '''printf '%s\t%s' "$USER" "$GROUP"''', hide=True, shell_escape=False
         ).split("\t")
     )
     notebook_dir = kwargs.get("notebook_dir", "{home}/notebooks".format(home=home))
@@ -163,10 +167,10 @@ def install_jupyter_notebook1(virtual_env=None, *args, **kwargs):
 
 
 def install_opencv2(virtual_env=None, python3=False, *args, **kwargs):
-    home = kwargs.get("HOMEDIR", run("echo $HOME", quiet=True))
+    home = kwargs.get("HOMEDIR", c.run("echo $HOME", hide=True).stdout.rstrip())
     virtual_env = virtual_env or "{home}/venvs/tflow".format(home=home)
 
-    site_packages = run(
+    site_packages = c.run(
         '{virtual_env}/bin/python -c "import site; print(site.getsitepackages()[0])"'.format(
             virtual_env=virtual_env
         )
@@ -185,12 +189,12 @@ def install_opencv2(virtual_env=None, python3=False, *args, **kwargs):
 def install_tensorboard3(
     extra_opts=None, virtual_env=None, pip_install_args=None, *args, **kwargs
 ):
-    home = kwargs.get("HOMEDIR", run("echo $HOME", quiet=True))
+    home = kwargs.get("HOMEDIR", c.run("echo $HOME", hide=True).stdout.rstrip())
     virtual_env = virtual_env or "{home}/venvs/tflow".format(home=home)
     tensorboard_logs_dir = kwargs.get(
         "tensorboard_logs_dir", "{home}/tensorboard_logs_dir".format(home=home)
     )
-    run(
+    c.run(
         "mkdir -p {tensorboard_logs_dir}".format(
             tensorboard_logs_dir=tensorboard_logs_dir
         )
@@ -198,36 +202,37 @@ def install_tensorboard3(
 
     conf_name = "tensorboard"
 
-    with shell_env(PATH="{}/bin:$PATH".format(virtual_env), VIRTUAL_ENV=virtual_env):
-        run(
-            "pip install {pip_install_args} -U tensorboard".format(
-                pip_install_args=pip_install_args or ""
-            )
-        )
+    env = dict(PATH="{}/bin:$PATH".format(virtual_env), VIRTUAL_ENV=virtual_env)
+    c.run(
+        "python -m pip install {pip_install_args} -U tensorboard".format(
+            pip_install_args=pip_install_args or ""
+        ),
+        env=env,
+    )
 
-        """
-        listen_ip, notebook_dir, pythonpath,
-        listen_port='8888', conf_name='jupyter_notebook',
-        extra_opts=None, **kwargs)
-        """
-        tensorboard_exec = run("command -v tensorboard")
-        install_upgrade_service(
-            conf_name,
-            conf_local_filepath=kwargs.get("systemd-conf-file"),
-            context={
-                "ExecStart": " ".join(
-                    (
-                        tensorboard_exec,
-                        "--logdir '{tensorboard_logs_dir}'".format(
-                            tensorboard_logs_dir=tensorboard_logs_dir
-                        ),
-                        extra_opts if extra_opts else "",
-                    )
-                ),
-                "Environments": kwargs["Environments"],
-                "WorkingDirectory": tensorboard_logs_dir,
-                "User": kwargs["User"],
-                "Group": kwargs["Group"],
-            },
-        )
-    return restart_systemd(conf_name)
+    """
+    listen_ip, notebook_dir, pythonpath,
+    listen_port='8888', conf_name='jupyter_notebook',
+    extra_opts=None, **kwargs)
+    """
+    tensorboard_exec = c.run("command -v tensorboard", env=env)
+    install_upgrade_service(
+        conf_name,
+        conf_local_filepath=kwargs.get("systemd-conf-file"),
+        context={
+            "ExecStart": " ".join(
+                (
+                    tensorboard_exec,
+                    "--logdir '{tensorboard_logs_dir}'".format(
+                        tensorboard_logs_dir=tensorboard_logs_dir
+                    ),
+                    extra_opts if extra_opts else "",
+                )
+            ),
+            "Environments": kwargs["Environments"],
+            "WorkingDirectory": tensorboard_logs_dir,
+            "User": kwargs["User"],
+            "Group": kwargs["Group"],
+        },
+    )
+    return restart_systemd(c, conf_name)
