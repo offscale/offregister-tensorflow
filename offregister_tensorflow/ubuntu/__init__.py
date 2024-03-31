@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 from os import environ
 
 from fabric.api import run, sudo
